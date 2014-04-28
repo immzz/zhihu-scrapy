@@ -15,33 +15,27 @@ import ast
 import re
 import random
 import traceback
+from zhihu import settings
 class PeopleSpider(Spider):
+    
     name = 'zhihu_people'
     start_urls = []
-    REDIS_HOST = 'localhost'
-    r = redis.StrictRedis(host=REDIS_HOST, port=6379, db=0)
+    r = redis.StrictRedis(host=settings.REDIS_HOST, port=6379, db=0)
     r_local = redis.StrictRedis(host='localhost', port=6379, db=0)
     driver = None
-    MAX_FETCH = 10
-    FOLLOW_PER_PAGE = 20
-    FOLLOW_PAGE_INTERVAL = 1
-    AJAX_CHECK_INTERVAL = 0.2
-    AJAX_TIMEOUT = 5
-    AJAX_RETRY = 3
-    AJAX_WAIT = 2
-    AJAX_URL = {"followees":"/node/ProfileFolloweesListV2","followers":"/node/ProfileFollowersListV2"}
-    QUERY_INTERVAL = 10
-    LOGIN_URL = 'http://m.zhihu.com/#signin'
+    
     def __init__(self):
         log.start(logfile=time.strftime("log/%Y%m%d%H%M%S")+".log",logstdout=False)
         co = ChromeOptions()
         co.add_experimental_option("prefs",{"profile.default_content_settings":{"images":2,"media":2}})
         self.driver = webdriver.Chrome(chrome_options=co)
         self.driver.set_window_size(640,960)
+    
     def parse(self,response):
         pass
+    
     def start_requests(self):
-        self.driver.get(self.LOGIN_URL)
+        self.driver.get(settings.LOGIN_URL)
         
         u = self.driver.find_element_by_name("email")
         p = self.driver.find_element_by_name("password")
@@ -49,17 +43,18 @@ class PeopleSpider(Spider):
         p.send_keys(raw_input("Password:"))
         u.submit()
         time.sleep(5)
-        if self.driver.current_url == self.LOGIN_URL:
+        if self.driver.current_url == settings.LOGIN_URL:
             print "login failed"
             time.sleep(7)
             u.submit()
             time.sleep(5)
         self.logged_in()
+    
     def logged_in(self):
         while True:
             #fetch new ids to crawl
             log.msg("wait for a new query...",level=log.INFO)
-            time.sleep(self.QUERY_INTERVAL)
+            time.sleep(settings.QUERY_INTERVAL)
             log.msg("fetching new ids",level=log.INFO)
             try:
                 new_id_list = self.fetch_new_id_list()
@@ -128,7 +123,7 @@ class PeopleSpider(Spider):
     def fetch_new_id_list(self):
         new_id_list = []
         pipe = self.r.pipeline()
-        for i in range(self.MAX_FETCH):
+        for i in range(settings.MAX_FETCH):
             pipe.rpop('new_id_queue')
         new_id_list = pipe.execute()
         new_id_list = [x for x in new_id_list if x is not None]
@@ -194,8 +189,8 @@ class PeopleSpider(Spider):
         page = 1
         user[category] = []
         while True:
-            post_data['params']['offset']=(page-1)*self.FOLLOW_PER_PAGE
-            follow_res = self.block_ajax_load(self.AJAX_URL[category],"post",post_data)
+            post_data['params']['offset']=(page-1)*settings.FOLLOW_PER_PAGE
+            follow_res = self.block_ajax_load(settings.AJAX_URL[category],"post",post_data)
             if not follow_res:
                 break
             ex = r'"http://www\.zhihu\.com/people/([^"]+)"'
@@ -219,7 +214,7 @@ class PeopleSpider(Spider):
     def random_sleep(self,sec):
         time.sleep(random.uniform(max(sec-1,0),sec+1))
         
-    def block_ajax_load(self,url,method,params,wait=AJAX_WAIT):
+    def block_ajax_load(self,url,method,params,wait=settings.AJAX_WAIT):
         retry = 0
         while True:
             self.driver.execute_script("if($('#temp-store').length == 0) $('body').append('<input type=\"hidden\" id=\"temp-store\">'); else $('#temp-store').val('');");
@@ -228,7 +223,7 @@ class PeopleSpider(Spider):
             while True:
                 res =  self.driver.execute_script('return $("#temp-store").val()')
                 if res == "":
-                    time.sleep(self.AJAX_CHECK_INTERVAL)
+                    time.sleep(settings.AJAX_CHECK_INTERVAL)
                 elif res == "undefined":
                     return None
                 elif res == "empty":
@@ -237,8 +232,8 @@ class PeopleSpider(Spider):
                     log.msg("[Block Ajax Load] %s in %ss" % (url,str(time.time()-start_time)),level=log.INFO)
                     self.random_sleep(wait)
                     return res
-                if time.time() - start_time > self.AJAX_TIMEOUT:
-                    if retry < self.AJAX_RETRY:
+                if time.time() - start_time > settings.AJAX_TIMEOUT:
+                    if retry < settings.AJAX_RETRY:
                         log.msg("[Block Ajax Load] %s retry" % url,level=log.WARNING)
                         retry += 1
                         break
