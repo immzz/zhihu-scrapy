@@ -14,3 +14,5 @@ NEWSPIDER_MODULE = 'zhihu.spiders'
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 #USER_AGENT = 'zhihu (+http://www.yourdomain.com)'
 COOKIES_DEBUG = True
+
+DEBUG = True
