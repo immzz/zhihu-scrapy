@@ -16,6 +16,8 @@ import re
 import random
 import traceback
 from zhihu import settings
+from xvfbwrapper import Xvfb
+import platform
 class PeopleSpider(Spider):
     
     name = 'zhihu_people'
@@ -26,36 +28,116 @@ class PeopleSpider(Spider):
     
     def __init__(self):
         log.start(logfile=time.strftime("log/%Y%m%d%H%M%S")+".log",logstdout=False)
+        if platform.system() == "Linux":
+            #on linux, use virtual display
+            vdisplay = Xvfb()
+            vdisplay.start()
         co = ChromeOptions()
-        co.add_experimental_option("prefs",{"profile.default_content_settings":{"images":2,"media":2}})
+        co.add_experimental_option("prefs",{"profile.default_content_settings":{"popups":1}})
+        #co.add_experimental_option("prefs",{"profile.default_content_settings":{"popups":1,"images":2,"media":2}})
         self.driver = webdriver.Chrome(chrome_options=co)
         self.driver.set_window_size(640,960)
-    
+        
     def parse(self,response):
         pass
     
     def start_requests(self):
         self.driver.get(settings.LOGIN_URL)
-        
         u = self.driver.find_element_by_name("email")
         p = self.driver.find_element_by_name("password")
+        u.clear()
         u.send_keys(raw_input("Email:"))
+        p.clear()
         p.send_keys(raw_input("Password:"))
         u.submit()
-        time.sleep(5)
+        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
         if self.driver.current_url == settings.LOGIN_URL:
-            print "login failed"
-            time.sleep(7)
-            u.submit()
-            time.sleep(5)
+            #try to input captcha
+            log.msg("login failed,try to input captcha",level=log.ERROR)
+            self.take_snapshot("captcha.png")
+            try:
+                captcha = self.driver.find_element_by_name('captcha')
+                u = self.driver.find_element_by_name("email")
+                p = self.driver.find_element_by_name("password")
+                u.clear()
+                u.send_keys(raw_input("Email:"))
+                p.clear()
+                p.send_keys(raw_input("Password:"))
+                captcha.clear()
+                captcha.send_keys(raw_input("captcha:"))
+                u.submit()
+                self.take_snapshot()
+                time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+            except:
+                log.msg(traceback.format_exc(), level=log.ERROR)
+            if self.driver.current_url == settings.LOGIN_URL:
+                log.msg("login failed,try weibo login",level=log.ERROR)
+                weibo_attempt = 0
+                while weibo_attempt < settings.LOGIN_RETRY + 1:
+                    self.login_with_weibo()
+                    weibo_attempt += 1
+                    if self.driver.current_url == settings.LOGIN_URL:
+                        log.msg("login failed,retry weibo login",level=log.ERROR)
+                    else:
+                        break
+                if weibo_attempt >= settings.LOGIN_RETRY + 1:
+                    log.msg("login failed,try qq login",level=log.ERROR)
+                    qq_attempt = 0
+                    while qq_attempt < settings.LOGIN_RETRY + 1:
+                        self.login_with_qq()
+                        qq_attempt += 1
+                        if self.driver.current_url == settings.LOGIN_URL:
+                            log.msg("login failed,retry qq login",level=log.ERROR)
+                        else:
+                            break
+                    if qq_attempt >= settings.LOGIN_RETRY + 1:
+                        log.msg("login failed, closing crawler...",level=log.ERROR)
+                        return
+        if settings.DEBUG_INFO : log.msg("logged in",level=log.INFO)
+        print "start crawling..."
         self.logged_in()
-    
+        
+    def login_with_weibo(self):
+        self.driver.execute_script('$(".js-bindweibo")[0].click()')
+        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+        u = self.driver.find_element_by_name('userId')
+        p = self.driver.find_element_by_name('passwd')
+        u.clear()
+        u.send_keys(raw_input('weibo email:'))
+        p.clear()
+        p.send_keys(raw_input('weibo password:'))
+        self.driver.find_element_by_xpath('//a[@action-type="submit"]').click()
+        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        #close popup window if exists
+        if len(self.driver.window_handles) > 1:
+            self.driver.close()
+        self.driver.switch_to.window(self.driver.window_handles[0])
+        
+    def login_with_qq(self):
+        self.driver.execute_script('$(".js-bindqq")[0].click()')
+        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+        self.driver.switch_to.frame(0)
+        u = self.driver.find_element_by_name('u')
+        p = self.driver.find_element_by_name('p')
+        u.clear()
+        u.send_keys(raw_input('qq:'))
+        p.clear()
+        p.send_keys(raw_input('qq password:'))
+        self.driver.find_element_by_id('login_button').click()
+        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        #close popup window if exists
+        if len(self.driver.window_handles) > 1:
+            self.driver.close()
+        self.driver.switch_to.window(self.driver.window_handles[0])
+        
     def logged_in(self):
         while True:
             #fetch new ids to crawl
-            log.msg("wait for a new query...",level=log.INFO)
+            if settings.DEBUG_INFO : log.msg("wait for a new query...",level=log.INFO)
             time.sleep(settings.QUERY_INTERVAL)
-            log.msg("fetching new ids",level=log.INFO)
+            if settings.DEBUG_INFO : log.msg("fetching new ids",level=log.INFO)
             try:
                 new_id_list = self.fetch_new_id_list()
             except:
@@ -66,7 +148,7 @@ class PeopleSpider(Spider):
                 user = User()
                 user['id'] = new_id
                 #fetch personal information
-                log.msg("extracting profile for %s" % new_id,level=log.INFO)
+                if settings.DEBUG_INFO : log.msg("extracting profile for %s" % new_id,level=log.INFO)
                 try:
                     self.parse_profile_page(new_id,user)
                 except:
@@ -74,7 +156,7 @@ class PeopleSpider(Spider):
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     continue
                 #process followees
-                log.msg("extracting followees for %s" % new_id,level=log.INFO)
+                if settings.DEBUG_INFO : log.msg("extracting followees for %s" % new_id,level=log.INFO)
                 try:
                     self.parse_follow_page(new_id,'followees',user)
                 except:
@@ -82,7 +164,7 @@ class PeopleSpider(Spider):
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     continue
                 #process followers
-                log.msg("extracting followers for %s" % new_id,level=log.INFO)
+                if settings.DEBUG_INFO : log.msg("extracting followers for %s" % new_id,level=log.INFO)
                 try:
                     self.parse_follow_page(new_id,'followers',user)
                 except:
@@ -90,7 +172,7 @@ class PeopleSpider(Spider):
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     continue
                 #save user locally
-                log.msg("saving user %s locally" % new_id,level=log.INFO)
+                if settings.DEBUG_INFO : log.msg("saving user %s locally" % new_id,level=log.INFO)
                 try:
                     self.save_user_locally(user)
                 except:
@@ -98,7 +180,7 @@ class PeopleSpider(Spider):
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     continue
                 #push new ids to redis server
-                log.msg("uploading new ids for %s" % new_id,level=log.INFO)
+                if settings.DEBUG_INFO : log.msg("uploading new ids for %s" % new_id,level=log.INFO)
                 try:
                     upload_list = user['followees']+user['followers']
                     self.upload_new_id_list(upload_list)
@@ -107,7 +189,7 @@ class PeopleSpider(Spider):
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     continue
                 #move finished user from proc set to finish queue and update user record
-                log.msg("moving %s from proc set to finish queue" % new_id,level=log.INFO)
+                if settings.DEBUG_INFO : log.msg("moving %s from proc set to finish queue" % new_id,level=log.INFO)
                 try:
                     if self.r.srem('proc_id_set',new_id) == 1:
                         pipe = self.r.pipeline()
@@ -214,6 +296,9 @@ class PeopleSpider(Spider):
     def random_sleep(self,sec):
         time.sleep(random.uniform(max(sec-1,0),sec+1))
         
+    def take_snapshot(self,name=time.strftime("%Y%m%d%H%M%S.png")):
+        self.driver.save_screenshot(name)
+        
     def block_ajax_load(self,url,method,params,wait=settings.AJAX_WAIT):
         retry = 0
         while True:
@@ -229,14 +314,14 @@ class PeopleSpider(Spider):
                 elif res == "empty":
                     return ""
                 else:
-                    log.msg("[Block Ajax Load] %s in %ss" % (url,str(time.time()-start_time)),level=log.INFO)
+                    if settings.DEBUG_INFO : log.msg("[Block Ajax Load] %s in %ss" % (url,str(time.time()-start_time)),level=log.INFO)
                     self.random_sleep(wait)
                     return res
                 if time.time() - start_time > settings.AJAX_TIMEOUT:
                     if retry < settings.AJAX_RETRY:
-                        log.msg("[Block Ajax Load] %s retry" % url,level=log.WARNING)
+                        if settings.DEBUG_WARNING : log.msg("[Block Ajax Load] %s retry" % url,level=log.WARNING)
                         retry += 1
                         break
                     else:
-                        log.msg("[Block Ajax Load] %s timeout" % url,level=log.WARNING)
+                        if settings.DEBUG_WARNING : log.msg("[Block Ajax Load] %s timeout" % url,level=log.WARNING)
                         return None

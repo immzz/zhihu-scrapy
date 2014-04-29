@@ -1,0 +1,43 @@
+dependencies:
+0.build-essential python-dev
+sudo apt-get install build-essential python-dev
+1. selenium
+2. xvfb
+sudo aptitude install xvfb
+sudo aptitude install x11-xkb-utils
+sudo aptitude install xserver-xorg-core
+sudo aptitude install xfonts-100dpi xfonts-75dpi xfonts-scalable xfonts-cyrillic
+
+3. xvfbwrapper
+sudo pip install xvfbwrapper
+
+2. chrome
+wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+sudo sh -c 'echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
+sudo apt-get update
+sudo apt-get install google-chrome-stable
+3. chromedriver
+wget -O /tmp/chromedriver.zip http://chromedriver.storage.googleapis.com/2.9/chromedriver_linux64.zip && sudo unzip /tmp/chromedriver.zip chromedriver -d /usr/local/bin/
+sudo chmod 777 /usr/local/bin/chromedriver
+4.scrapy
+sudo apt-get install python-scrapy
+
+5.redis
+
+
+#for nx remote desktop
+sudo aptitude install ubuntu-desktop 
+wget http://web13.nomachine.com/download/4.2/Linux/nomachine_4.2.21_1_amd64.deb
+sudo dpkg -i nomachine_4.2.21_1_amd64.deb
+/usr/NX/bin/nxserver --useradd crawl --system
+
+COOKIE=`ps -ef | md5sum | cut -f 1 -d " "`
+sudo xauth -f /var/run/Xvfb-0.auth add :0 MIT-MAGIC-COOKIE-1 $COOKIE
+xauth add :0 MIT-MAGIC-COOKIE-1 $COOKIE
+Xvfb :0 -auth /var/run/Xvfb-0.auth -screen 0 1024x768x24 &
+DISPLAY=:0 /etc/X11/Xsession gnome-session &
+
+
+
+REHL:
+sudo yum install xorg-x11-server-Xvfb
