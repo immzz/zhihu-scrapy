@@ -1,15 +1,22 @@
 dependencies:
-0.build-essential python-dev
+0. sudo apt-get update
+1. build-essential python-dev
 sudo apt-get install build-essential python-dev
-1. selenium
+
 2. xvfb
 sudo aptitude install xvfb
 sudo aptitude install x11-xkb-utils
 sudo aptitude install xserver-xorg-core
 sudo aptitude install xfonts-100dpi xfonts-75dpi xfonts-scalable xfonts-cyrillic
-
+1. selenium
 3. xvfbwrapper
-sudo pip install xvfbwrapper
+4. scrapy
+5. redis
+wget http://download.redis.io/redis-stable.tar.gz
+tar xvzf redis-stable.tar.gz
+cd redis-stable
+make
+6. sudo pip install -r requirements.txt
 
 2. chrome
 wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
@@ -19,11 +26,6 @@ sudo apt-get install google-chrome-stable
 3. chromedriver
 wget -O /tmp/chromedriver.zip http://chromedriver.storage.googleapis.com/2.9/chromedriver_linux64.zip && sudo unzip /tmp/chromedriver.zip chromedriver -d /usr/local/bin/
 sudo chmod 777 /usr/local/bin/chromedriver
-4.scrapy
-sudo apt-get install python-scrapy
-
-5.redis
-
 
 #for nx remote desktop
 sudo aptitude install ubuntu-desktop 
