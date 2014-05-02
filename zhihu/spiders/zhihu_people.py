@@ -11,6 +11,7 @@ import time,datetime
 from selenium import webdriver
 from selenium.webdriver import ChromeOptions,DesiredCapabilities
 from zhihu.items import User
+from zhihu import utils
 import ast
 import re
 import random
@@ -18,6 +19,7 @@ import traceback
 from zhihu import settings
 from xvfbwrapper import Xvfb
 import platform
+import base64
 class PeopleSpider(Spider):
     
     name = 'zhihu_people'
@@ -25,8 +27,11 @@ class PeopleSpider(Spider):
     r = redis.StrictRedis(host=settings.REDIS_HOST, port=6379, db=0)
     r_local = redis.StrictRedis(host='localhost', port=6379, db=0)
     driver = None
-    
     def __init__(self):
+        self.crawler_id = self.get_crawler_id()
+        self.r.set('crawler:ip:%s' % self.crawler_id,utils.get_external_ip())
+        self.r_local.set('crawler:status:%s' % self.crawler_id, 'good')
+        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
         log.start(logfile=time.strftime("log/%Y%m%d%H%M%S")+".log",logstdout=False)
         if platform.system() == "Linux":
             #on linux, use virtual display
@@ -40,7 +45,14 @@ class PeopleSpider(Spider):
         
     def parse(self,response):
         pass
-    
+        
+    def get_crawler_id(self):
+        while True:
+            crawler_id = base64.standard_b64encode(datetime.datetime.utcnow().__str__())
+            if self.r.sadd('crawler_id_set',crawler_id):
+                return crawler_id
+                
+            
     def start_requests(self):
         self.driver.get(settings.LOGIN_URL)
         u = self.driver.find_element_by_name("email")
@@ -50,56 +62,63 @@ class PeopleSpider(Spider):
         p.clear()
         p.send_keys(raw_input("Password:"))
         u.submit()
-        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
         if self.driver.current_url == settings.LOGIN_URL:
             #try to input captcha
-            log.msg("login failed,try to input captcha",level=log.ERROR)
-            self.take_snapshot("captcha.png")
+            log.msg("login failed, investigating...",level=log.ERROR)
             try:
                 captcha = self.driver.find_element_by_name('captcha')
-                u = self.driver.find_element_by_name("email")
-                p = self.driver.find_element_by_name("password")
-                u.clear()
-                u.send_keys(raw_input("Email:"))
-                p.clear()
-                p.send_keys(raw_input("Password:"))
-                captcha.clear()
-                captcha.send_keys(raw_input("captcha:"))
-                u.submit()
-                self.take_snapshot()
-                time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
             except:
-                log.msg(traceback.format_exc(), level=log.ERROR)
-            if self.driver.current_url == settings.LOGIN_URL:
-                log.msg("login failed,try weibo login",level=log.ERROR)
-                weibo_attempt = 0
-                while weibo_attempt < settings.LOGIN_RETRY + 1:
-                    self.login_with_weibo()
-                    weibo_attempt += 1
-                    if self.driver.current_url == settings.LOGIN_URL:
-                        log.msg("login failed,retry weibo login",level=log.ERROR)
-                    else:
-                        break
-                if weibo_attempt >= settings.LOGIN_RETRY + 1:
-                    log.msg("login failed,try qq login",level=log.ERROR)
-                    qq_attempt = 0
-                    while qq_attempt < settings.LOGIN_RETRY + 1:
-                        self.login_with_qq()
-                        qq_attempt += 1
-                        if self.driver.current_url == settings.LOGIN_URL:
-                            log.msg("login failed,retry qq login",level=log.ERROR)
-                        else:
+                log.msg("found no captcha",level=log.ERROR)
+            else:
+                login_attempt = 0
+                while login_attempt < settings.LOGIN_RETRY + 1:
+                    #wait for captcha input
+                    self.r_local.delete('captcha:%s' % self.crawler_id)
+                    self.r_local.delete('captcha_input:%s' % self.crawler_id)
+                    self.r_local.set('crawler:status:%s' % self.crawler_id, 'captcha_input')
+                    log.msg("wait for captcha input...",level=log.INFO)
+                    while True:
+                        if self.r_local.get('crawler:status:%s' % self.crawler_id) == 'captcha_snapshot':
+                            #refresh captcha
+                            refresh_link = self.driver.find_element_by_xpath('//img[@class="js-captcha-img"]')
+                            refresh_link.click()
+                            time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
+                            self.r_local.set('captcha:%s' % self.crawler_id, self.driver.get_screenshot_as_png())
+                            log.msg("captcha for %s taken" % self.crawler_id,level=log.INFO)
+                            while True:
+                                #check input
+                                captcha_input = self.r_local.get('captcha_input:%s' % self.crawler_id)
+                                if captcha_input:
+                                    captcha.clear()
+                                    captcha.send_keys(captcha_input)
+                                    captcha.submit()
+                                    log.msg("captcha input for %s submitted" % self.crawler_id,level=log.INFO)
+                                    time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
+                                    break
+                                time.sleep(settings.CAPTCHA_CHECK_INTERVAL)
                             break
-                    if qq_attempt >= settings.LOGIN_RETRY + 1:
-                        log.msg("login failed, closing crawler...",level=log.ERROR)
-                        return
+                        time.sleep(settings.CAPTCHA_CHECK_INTERVAL)
+                    if self.driver.current_url == settings.LOGIN_URL:
+                        log.msg("login failed, retry...",level=log.ERROR)
+                        self.r_local.set('crawler:status:%s' % self.crawler_id, 'captcha_input')
+                        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
+                    else:
+                        self.r_local.set('crawler:status:%s' % self.crawler_id, 'good')
+                        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
+                        break
+                    login_attempt += 1
+                if login_attempt >= settings.LOGIN_RETRY + 1:
+                    log.msg("login failed, exit...",level=log.ERROR)
+                    return
+                
         if settings.DEBUG_INFO : log.msg("logged in",level=log.INFO)
         print "start crawling..."
         self.logged_in()
         
     def login_with_weibo(self):
         self.driver.execute_script('$(".js-bindweibo")[0].click()')
-        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
         self.driver.switch_to.window(self.driver.window_handles[-1])
         u = self.driver.find_element_by_name('userId')
         p = self.driver.find_element_by_name('passwd')
@@ -108,7 +127,7 @@ class PeopleSpider(Spider):
         p.clear()
         p.send_keys(raw_input('weibo password:'))
         self.driver.find_element_by_xpath('//a[@action-type="submit"]').click()
-        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
         #close popup window if exists
         if len(self.driver.window_handles) > 1:
             self.driver.close()
@@ -116,7 +135,7 @@ class PeopleSpider(Spider):
         
     def login_with_qq(self):
         self.driver.execute_script('$(".js-bindqq")[0].click()')
-        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
         self.driver.switch_to.window(self.driver.window_handles[-1])
         self.driver.switch_to.frame(0)
         u = self.driver.find_element_by_name('u')
@@ -126,7 +145,7 @@ class PeopleSpider(Spider):
         p.clear()
         p.send_keys(raw_input('qq password:'))
         self.driver.find_element_by_id('login_button').click()
-        time.sleep(settings.UNTRACEABLE_REQUEST_WAIT)
+        time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
         #close popup window if exists
         if len(self.driver.window_handles) > 1:
             self.driver.close()
@@ -135,6 +154,7 @@ class PeopleSpider(Spider):
     def logged_in(self):
         while True:
             #fetch new ids to crawl
+            self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
             if settings.DEBUG_INFO : log.msg("wait for a new query...",level=log.INFO)
             time.sleep(settings.QUERY_INTERVAL)
             if settings.DEBUG_INFO : log.msg("fetching new ids",level=log.INFO)
@@ -201,6 +221,7 @@ class PeopleSpider(Spider):
                 except:
                     log.msg("error moving id %s from proc set to finish queue" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
                         
     def fetch_new_id_list(self):
         new_id_list = []

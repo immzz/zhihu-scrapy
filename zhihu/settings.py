@@ -14,11 +14,11 @@ NEWSPIDER_MODULE = 'zhihu.spiders'
 COOKIES_DEBUG = True
 
 DEBUG = True
-DEBUG_INFO = False
+DEBUG_INFO = True
 DEBUG_WARNING = True
 
 #SPIDER SETTINGS
-REDIS_HOST = 'localhost' #change this to main server address
+REDIS_HOST = '54.187.128.27' #change this to main server address
 MAX_FETCH = 10
 FOLLOW_PER_PAGE = 20
 AJAX_CHECK_INTERVAL = 0.2
@@ -27,6 +27,9 @@ AJAX_RETRY = 2
 AJAX_WAIT = 2
 AJAX_URL = {"followees":"/node/ProfileFolloweesListV2","followers":"/node/ProfileFollowersListV2"}
 QUERY_INTERVAL = 10
-UNTRACEABLE_REQUEST_WAIT = 10
+UNTRACABLE_REQUEST_WAIT = 10
 LOGIN_URL = 'http://m.zhihu.com/#signin'
 LOGIN_RETRY = 2
+CAPTCHA_CHECK_INTERVAL = 5
+
+PROC_ID_TIMEOUT = 72000 #20 hours
