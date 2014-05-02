@@ -24,6 +24,10 @@ class Monitor(object):
     def clear_crawler_set(cls):
         cls.r.delete('crawler_id_set')
     
+    @classmethod
+    def clear_expired_crawlers(cls):
+        pass
+    
     @classmethod 
     def add_user_id(cls,uid):
     	if not cls.r.sismember('id_set',uid):

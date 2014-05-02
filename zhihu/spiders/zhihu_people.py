@@ -288,7 +288,7 @@ class PeopleSpider(Spider):
         except:
             if settings.DEBUG_INFO : log.msg("no %s for %s" % (category,new_id),level=log.INFO)
             return
-        script_content = str(.get_attribute('data-init'))
+        script_content = str(follow_list.get_attribute('data-init'))
         _xsrf = str(self.driver.find_element_by_name('_xsrf').get_attribute('value'))
         post_data = ast.literal_eval(script_content)
         post_data['_xsrf'] = _xsrf
