@@ -77,7 +77,7 @@ class PeopleSpider(Spider):
                     self.r_local.delete('captcha:%s' % self.crawler_id)
                     self.r_local.delete('captcha_input:%s' % self.crawler_id)
                     self.r_local.set('crawler:status:%s' % self.crawler_id, 'captcha_input')
-                    log.msg("wait for captcha input...",level=log.INFO)
+                    if settings.DEBUG_INFO : log.msg("wait for captcha input...",level=log.INFO)
                     while True:
                         if self.r_local.get('crawler:status:%s' % self.crawler_id) == 'captcha_snapshot':
                             #refresh captcha
@@ -85,7 +85,7 @@ class PeopleSpider(Spider):
                             refresh_link.click()
                             time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
                             self.r_local.set('captcha:%s' % self.crawler_id, self.driver.get_screenshot_as_png())
-                            log.msg("captcha for %s taken" % self.crawler_id,level=log.INFO)
+                            if settings.DEBUG_INFO : log.msg("captcha for %s taken" % self.crawler_id,level=log.INFO)
                             while True:
                                 #check input
                                 captcha_input = self.r_local.get('captcha_input:%s' % self.crawler_id)
@@ -93,7 +93,7 @@ class PeopleSpider(Spider):
                                     captcha.clear()
                                     captcha.send_keys(captcha_input)
                                     captcha.submit()
-                                    log.msg("captcha input for %s submitted" % self.crawler_id,level=log.INFO)
+                                    if settings.DEBUG_INFO : log.msg("captcha input for %s submitted" % self.crawler_id,level=log.INFO)
                                     time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
                                     break
                                 time.sleep(settings.CAPTCHA_CHECK_INTERVAL)
@@ -281,8 +281,14 @@ class PeopleSpider(Spider):
             
     def parse_follow_page(self,new_id,category,user):
         # category - 'followees' or 'follower'
+        user[category] = []
         self.driver.get('http://m.zhihu.com/people/%s/%s' % (new_id,category))
-        script_content = str(self.driver.find_element_by_css_selector('.zh-general-list.clearfix').get_attribute('data-init'))
+        try:
+            follow_list = self.driver.find_element_by_css_selector('.zh-general-list')
+        except:
+            if settings.DEBUG_INFO : log.msg("no %s for %s" % (category,new_id),level=log.INFO)
+            return
+        script_content = str(.get_attribute('data-init'))
         _xsrf = str(self.driver.find_element_by_name('_xsrf').get_attribute('value'))
         post_data = ast.literal_eval(script_content)
         post_data['_xsrf'] = _xsrf
@@ -290,7 +296,6 @@ class PeopleSpider(Spider):
         del post_data['nodename']
         
         page = 1
-        user[category] = []
         while True:
             post_data['params']['offset']=(page-1)*settings.FOLLOW_PER_PAGE
             follow_res = self.block_ajax_load(settings.AJAX_URL[category],"post",post_data)

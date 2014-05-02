@@ -22,19 +22,13 @@ All crawling machines start a local redis server for storing user data.
 
 Start redis server on main server and crawling machines.
 
-Add initial users to the main redis server, here we provide a python example, you can rewrite it with other clients:
+Add initial users to the main redis server with Monitor, example:
 
 ```
 
-import redis
-from zhihu import settings
-
-r = redis.StrictRedis(host=settings.REDIS_HOST, port=6379, db=0)
-init_list = ['shen',]
-for item in init_list:
-	if not r.sismember('id_set',item):
-		r.lpush('new_id_queue',item)
-		r.sadd('id_set',item)
+\>\> from zhihu.utils import Monitor
+\>\> init_list = ['first-id',]
+\>\> Monitor.add_user_ids(init_list)
 
 ```
 
