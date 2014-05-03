@@ -2,3 +2,4 @@ selenium
 scrapy==0.22.2
 xvfbwrapper
 redis
+PIL

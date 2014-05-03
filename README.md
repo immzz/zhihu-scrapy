@@ -25,11 +25,9 @@ Start redis server on main server and crawling machines.
 Add initial users to the main redis server with Monitor, example:
 
 ```
-
 >> from zhihu.utils import Monitor
 >> init_list = ['first-id',]
 >> Monitor.add_user_ids(init_list)
-
 ```
 
 In `zhihu/settings.py` set `REDIS_HOST` to the ip address of the main redis server.
@@ -39,12 +37,10 @@ Use `scrapy crawl zhihu_people` to start a crawler.
 ###How to solve captchas?
 
 We provide the Monitor class to monitor crawlers, including solving captchas for them.
-To solve captchas for all crawlers that needs captcha, use:
+To solve captchas for all crawlers that need captcha, use:
 
 ```
-
 >> from zhihu.utils import Monitor
 >> m = Monitor()
 >> m.solve_captchas()
-
 ```

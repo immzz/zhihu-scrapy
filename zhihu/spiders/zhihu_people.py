@@ -28,11 +28,15 @@ class PeopleSpider(Spider):
     r_local = redis.StrictRedis(host='localhost', port=6379, db=0)
     driver = None
     def __init__(self):
+        log.start(logfile=time.strftime("log/%Y%m%d%H%M%S")+".log",logstdout=False)
+        log.msg("initiating crawler...",level=log.INFO)
         self.crawler_id = self.get_crawler_id()
+        log.msg("crawler id is %s" % self.crawler_id,level=log.INFO)
         self.r.set('crawler:ip:%s' % self.crawler_id,utils.get_external_ip())
+        log.msg("crawler ip is %s" % utils.get_external_ip(),level=log.INFO)
         self.r_local.set('crawler:status:%s' % self.crawler_id, 'good')
         self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
-        log.start(logfile=time.strftime("log/%Y%m%d%H%M%S")+".log",logstdout=False)
+        log.msg("local crawler status set",level=log.INFO)
         if platform.system() == "Linux":
             #on linux, use virtual display
             vdisplay = Xvfb()
@@ -297,6 +301,7 @@ class PeopleSpider(Spider):
         
         page = 1
         while True:
+            print page
             post_data['params']['offset']=(page-1)*settings.FOLLOW_PER_PAGE
             follow_res = self.block_ajax_load(settings.AJAX_URL[category],"post",post_data)
             if not follow_res:
@@ -308,7 +313,7 @@ class PeopleSpider(Spider):
             for followee_id in extract_ids:
                 user[category].append(re.sub(r'\\','',followee_id))
             page += 1
-            print page
+            
             
     def save_user_locally(self,user):
         self.r_local.set(user['id'],user.__str__())
