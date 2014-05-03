@@ -20,12 +20,13 @@ from zhihu import settings
 from xvfbwrapper import Xvfb
 import platform
 import base64
+import threading
 class PeopleSpider(Spider):
     
     name = 'zhihu_people'
     start_urls = []
     r = redis.StrictRedis(host=settings.REDIS_HOST, port=6379, db=0)
-    r_local = redis.StrictRedis(host='localhost', port=6379, db=0)
+    r_local = redis.StrictRedis(host='localhost', port=settings.REDIS_LOCAL_PORT, db=0)
     driver = None
     def __init__(self):
         log.start(logfile=time.strftime("log/%Y%m%d%H%M%S")+".log",logstdout=False)
@@ -33,10 +34,15 @@ class PeopleSpider(Spider):
         self.crawler_id = self.get_crawler_id()
         log.msg("crawler id is %s" % self.crawler_id,level=log.INFO)
         self.r.set('crawler:ip:%s' % self.crawler_id,utils.get_external_ip())
-        log.msg("crawler ip is %s" % utils.get_external_ip(),level=log.INFO)
+        self.r.set('crawler:port:%s' % self.crawler_id,settings.REDIS_LOCAL_PORT)
+        self.r.set('crawler:mapping_port:%s' % self.crawler_id,settings.REDIS_LOCAL_MAPPING_PORT)
+        log.msg("crawler ip is %s, port is %d" % (utils.get_external_ip(),settings.REDIS_LOCAL_PORT),level=log.INFO)
         self.r_local.set('crawler:status:%s' % self.crawler_id, 'good')
-        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
+        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
         log.msg("local crawler status set",level=log.INFO)
+        heartbeat_thread = threading.Thread(target=self.maintain_local_heartbeat)
+        heartbeat_thread.start()
+        log.msg("local crawler heartbeat started",level=log.INFO)
         if platform.system() == "Linux":
             #on linux, use virtual display
             vdisplay = Xvfb()
@@ -52,11 +58,19 @@ class PeopleSpider(Spider):
         
     def get_crawler_id(self):
         while True:
-            crawler_id = base64.standard_b64encode(datetime.datetime.utcnow().__str__())
+            crawler_id = base64.standard_b64encode(datetime.datetime.utcnow().strftime("%s"))
             if self.r.sadd('crawler_id_set',crawler_id):
                 return crawler_id
                 
-            
+    def maintain_local_heartbeat(self):
+        while True:
+            try:
+                self.r_local.set('crawler:heartbeat:%s' % self.crawler_id, time.time())
+                time.sleep(settings.CRAWLER_HEARTBEAT_INTERVAL)
+            except:
+                log.msg("heartbeat failed",level=log.ERROR)
+                break
+        
     def start_requests(self):
         self.driver.get(settings.LOGIN_URL)
         u = self.driver.find_element_by_name("email")
@@ -106,10 +120,10 @@ class PeopleSpider(Spider):
                     if self.driver.current_url == settings.LOGIN_URL:
                         log.msg("login failed, retry...",level=log.ERROR)
                         self.r_local.set('crawler:status:%s' % self.crawler_id, 'captcha_input')
-                        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
+                        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
                     else:
                         self.r_local.set('crawler:status:%s' % self.crawler_id, 'good')
-                        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
+                        self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
                         break
                     login_attempt += 1
                 if login_attempt >= settings.LOGIN_RETRY + 1:
@@ -158,7 +172,7 @@ class PeopleSpider(Spider):
     def logged_in(self):
         while True:
             #fetch new ids to crawl
-            self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
+            self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
             if settings.DEBUG_INFO : log.msg("wait for a new query...",level=log.INFO)
             time.sleep(settings.QUERY_INTERVAL)
             if settings.DEBUG_INFO : log.msg("fetching new ids",level=log.INFO)
@@ -218,14 +232,13 @@ class PeopleSpider(Spider):
                     if self.r.srem('proc_id_set',new_id) == 1:
                         pipe = self.r.pipeline()
                         pipe.lpush('finish_id_queue',new_id)
-                        pipe.set('update_time:'+new_id,datetime.datetime.utcnow())
                         pipe.execute()
                     else:
                         log.msg("error removing id %s from proc set" % new_id,level=log.ERROR)
                 except:
                     log.msg("error moving id %s from proc set to finish queue" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
-                self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow())
+                self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
                         
     def fetch_new_id_list(self):
         new_id_list = []
@@ -236,8 +249,7 @@ class PeopleSpider(Spider):
         new_id_list = [x for x in new_id_list if x is not None]
         for new_id in new_id_list:
             pipe.sadd('proc_id_set',new_id)
-            pipe.lpush('machine_list:'+new_id,self.get_mac_address())
-            pipe.set('update_time:'+new_id,datetime.datetime.utcnow())
+            pipe.set('crawler_id:'+new_id,self.crawler_id)
         pipe.execute()
         return new_id_list
             
@@ -317,12 +329,6 @@ class PeopleSpider(Spider):
             
     def save_user_locally(self,user):
         self.r_local.set(user['id'],user.__str__())
-        
-    def get_mac_address(self):
-    	import uuid
-    	node = uuid.getnode()
-    	mac = uuid.UUID(int = node).hex[-12:]
-    	return mac
         
     def random_sleep(self,sec):
         time.sleep(random.uniform(max(sec-1,0),sec+1))
