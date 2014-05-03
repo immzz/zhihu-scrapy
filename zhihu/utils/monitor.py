@@ -42,21 +42,21 @@ class Monitor(object):
             print "checking crawler %s on %s" % (crawler[0],crawler[1])
             self.r_to_crawler = redis.StrictRedis(host=crawler[1], port=crawler[2], db=0)
             try:
-                heartbeat = self.r_to_crawler.get('crawler:heartbeat:%s' % crawler[0])
-                timestamp = self.r_to_crawler.time()
+                heartbeat = float(self.r_to_crawler.get('crawler:heartbeat:%s' % crawler[0]))
+                timestamp = self.r_to_crawler.time()[0]
             except:
-                print "cannot connect to crawler %s on %s" % (crawler[0],crawler[1])
+                print "cannot get heartbeat or timestamp for crawler %s on %s:%s" % (crawler[0],crawler[1],str(crawler[2]))
                 if self.r.srem('crawler_id_set',crawler[0]):
                     print "removed crawler %s from crawler id set" % crawler[0]
                 continue
             if not heartbeat or not timestamp:
-                print "cannot get heartbeat or timestamp from crawler %s on %s" % (crawler[0],crawler[1])
+                print "cannot get heartbeat or timestamp for crawler %s on %s:%s" % (crawler[0],crawler[1],str(crawler[2]))
                 if self.r.srem('crawler_id_set',crawler[0]):
                     print "removed crawler %s from crawler id set" % crawler[0]
                 continue
             if timestamp - heartbeat > CRAWLER_HEARTBEAT_TIMEOUT:
                 #heartbeat timeout
-                print "heartbeat of crawler %s on %s timeout" % (crawler[0],crawler[1])
+                print "heartbeat of crawler %s on %s:%s timeout" % (crawler[0],crawler[1],str(crawler[2]))
                 if self.r.srem('crawler_id_set',crawler[0]):
                     print "removed crawler %s from crawler id set" % crawler[0]
     
