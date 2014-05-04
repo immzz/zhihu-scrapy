@@ -192,6 +192,7 @@ class PeopleSpider(Spider):
                 except:
                     log.msg("error extracting profile for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    self.recrawl_user(new_id)
                     continue
                 #process followees
                 if settings.DEBUG_INFO : log.msg("extracting followees for %s" % new_id,level=log.INFO)
@@ -200,6 +201,7 @@ class PeopleSpider(Spider):
                 except:
                     log.msg("error extracting followees for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    self.recrawl_user(new_id)
                     continue
                 #process followers
                 if settings.DEBUG_INFO : log.msg("extracting followers for %s" % new_id,level=log.INFO)
@@ -208,6 +210,7 @@ class PeopleSpider(Spider):
                 except:
                     log.msg("error extracting followers for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    self.recrawl_user(new_id)
                     continue
                 #save user locally
                 if settings.DEBUG_INFO : log.msg("saving user %s locally" % new_id,level=log.INFO)
@@ -216,6 +219,7 @@ class PeopleSpider(Spider):
                 except:
                     log.msg("error saving user %s locally" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    self.recrawl_user(new_id)
                     continue
                 #push new ids to redis server
                 if settings.DEBUG_INFO : log.msg("uploading new ids for %s" % new_id,level=log.INFO)
@@ -225,6 +229,7 @@ class PeopleSpider(Spider):
                 except:
                     log.msg("error uploading new ids for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    self.recrawl_user(new_id)
                     continue
                 #move finished user from proc set to finish queue and update user record
                 if settings.DEBUG_INFO : log.msg("moving %s from proc set to finish queue" % new_id,level=log.INFO)
@@ -232,12 +237,14 @@ class PeopleSpider(Spider):
                     if self.r.srem('proc_id_set',new_id) == 1:
                         pipe = self.r.pipeline()
                         pipe.lpush('finish_id_queue',new_id)
+                        pipe.set('update_time:%s' % new_id, datetime.datetime.utcnow().strftime("%s"))
                         pipe.execute()
                     else:
                         log.msg("error removing id %s from proc set" % new_id,level=log.ERROR)
                 except:
                     log.msg("error moving id %s from proc set to finish queue" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    self.recrawl_user(new_id)
                 self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
                         
     def fetch_new_id_list(self):
@@ -261,7 +268,11 @@ class PeopleSpider(Spider):
         for i in range(len(upload_status_list)):
             if upload_status_list[i] == 1:
                 pipe.lpush('new_id_queue',upload_list[i])
-        pipe.execute()       
+        pipe.execute()
+    
+    def recrawl_user(self,user_id):
+        if self.r.srem('proc_id_set',user_id) == 1:
+            self.r.lpush('new_id_queue',user_id)
             
     def parse_profile_page(self,new_id,user):
         self.driver.get('http://m.zhihu.com/people/%s/about' % new_id)
