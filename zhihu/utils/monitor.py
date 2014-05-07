@@ -4,25 +4,53 @@ import redis
 import time
 class Monitor(object):
     
-    r = redis.StrictRedis(host=REDIS_HOST, port=6379, db=0)
+    
     
     def __init__(self):
-        self.crawler_list = self.update_crawler_list()
+        self.r = redis.StrictRedis(host=REDIS_HOST, port=6379, db=0)
         self.r_to_crawler = None
         
         
-    @classmethod 
-    def add_user_id(cls,uid):
-    	if not cls.r.sismember('id_set',uid):
-    		cls.r.lpush('new_id_queue',uid)
-    		cls.r.sadd('id_set',uid)
+    def add_user_id(self,uid):
+    	if not self.r.sismember('id_set',uid):
+    		self.r.lpush('new_id_queue',uid)
+    		self.r.sadd('id_set',uid)
             
-    @classmethod
-    def add_user_ids(cls,lst):
+    def add_user_ids(self,lst):
         for item in lst:
-        	cls.add_user_id(item)
+        	self.add_user_id(item)
     
-    def update_crawler_list(self):
+    def total_id_count(self):
+        return self.r.scard('id_set')
+        
+    def new_id_count(self):
+        return self.r.llen('new_id_queue')
+        
+    def finish_id_count(self):
+        return self.r.llen('finish_id_queue')
+        
+    def proc_id_count(self):
+        return self.r.scard('proc_id_set')
+        
+    def error_id_count(self):
+        return self.r.llen('error_id_queue')
+        
+    def stats(self):
+        pipe = self.r.pipeline()
+        pipe.scard('id_set')
+        pipe.llen('new_id_queue')
+        pipe.scard('proc_id_set')
+        pipe.llen('finish_id_queue')
+        pipe.llen('error_id_queue')
+        stats = pipe.execute()
+        
+        print "---------------------ID STATS---------------------"
+        print "Total %d New %d Processing %d Finished %d Error %d"% (stats[0],stats[1],stats[2],stats[3],stats[4])
+        
+        
+        
+    
+    def get_crawler_list(self):
         lst = self.r.sscan(name='crawler_id_set',count=10000)[1]
         pipe = self.r.pipeline()
         for i in range(len(lst)):
@@ -37,8 +65,8 @@ class Monitor(object):
         return lst
     
     def clear_expired_crawlers(self):
-        self.update_crawler_list()
-        for crawler in self.crawler_list:
+        crawler_list = self.get_crawler_list()
+        for crawler in crawler_list:
             print "checking crawler %s on %s" % (crawler[0],crawler[1])
             self.r_to_crawler = redis.StrictRedis(host=crawler[1], port=crawler[2], db=0)
             try:
@@ -125,10 +153,12 @@ class Monitor(object):
              time.sleep(CAPTCHA_CHECK_INTERVAL)
              
     def solve_captchas(self):
-        for crawler in self.crawler_list:
+        crawler_list = self.get_crawler_list()
+        for crawler in crawler_list:
             crawler_id = crawler[0]
             crawler_ip = crawler[1]
             crawler_port = crawler[2]
             if crawler_id and crawler_ip:
                self.solve_captcha(crawler_id,crawler_ip,crawler_port)
+    
                 

@@ -1,2 +1,5 @@
 log/*
 *.pyc
+TODO.txt
+*.rdb
+*.log

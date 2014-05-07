@@ -11,6 +11,7 @@ class User(Item):
     # name = Field()
     id = Field()
     name = Field()
+    gender = Field()
     stats = Field()
     achivement = Field()
     company = Field()
