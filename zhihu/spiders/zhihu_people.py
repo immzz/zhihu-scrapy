@@ -37,6 +37,10 @@ class PeopleSpider(Spider):
         self.r.set('crawler:port:%s' % self.crawler_id,settings.REDIS_LOCAL_PORT)
         self.r.set('crawler:mapping_port:%s' % self.crawler_id,settings.REDIS_LOCAL_MAPPING_PORT)
         log.msg("crawler ip is %s, port is %d" % (utils.get_external_ip(),settings.REDIS_LOCAL_PORT),level=log.INFO)
+        account = self.get_account()
+        self.username = account[0]
+        self.password = account[1]
+        log.msg("crawler account got",level=log.INFO)
         self.r_local.set('crawler:status:%s' % self.crawler_id, 'good')
         self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
         log.msg("local crawler status set",level=log.INFO)
@@ -63,7 +67,15 @@ class PeopleSpider(Spider):
             crawler_id = base64.standard_b64encode(datetime.datetime.utcnow().strftime("%s"))
             if self.r.sadd('crawler_id_set',crawler_id):
                 return crawler_id
-                
+    
+    def get_account(self):
+        while True:
+            account = self.r.spop('account_set')
+            if account:
+                self.r.set('crawler_account:%s' % self.crawler_id, account) 
+                return ast.literal_eval(account)
+            time.sleep(settings.QUERY_INTERVAL)
+
     def maintain_local_heartbeat(self):
         while True:
             try:
@@ -78,9 +90,9 @@ class PeopleSpider(Spider):
         u = self.driver.find_element_by_name("email")
         p = self.driver.find_element_by_name("password")
         u.clear()
-        u.send_keys(raw_input("Email:"))
+        u.send_keys(self.username)
         p.clear()
-        p.send_keys(raw_input("Password:"))
+        p.send_keys(self.password)
         u.submit()
         time.sleep(settings.UNTRACABLE_REQUEST_WAIT)
         if self.driver.current_url == settings.LOGIN_URL:
@@ -191,47 +203,62 @@ class PeopleSpider(Spider):
                 if settings.DEBUG_INFO : log.msg("extracting profile for %s" % new_id,level=log.INFO)
                 try:
                     self.parse_profile_page(new_id,user)
-                except:
+                except Exception as e:
                     log.msg("error extracting profile for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    if str(e).find('no such session')  >= 0:
+                        log.msg("session crashed, terminating...",level=log.ERROR)
+                        return
                     self.move_to_error_queue(new_id)
                     continue
                 #process followees
                 if settings.DEBUG_INFO : log.msg("extracting followees for %s" % new_id,level=log.INFO)
                 try:
                     self.parse_follow_page(new_id,'followees',user)
-                except:
+                except Exception as e:
                     log.msg("error extracting followees for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     self.move_to_error_queue(new_id)
+                    if str(e).find('no such session')  >= 0:
+                        log.msg("session crashed, terminating...",level=log.ERROR)
+                        return
                     continue
                 #process followers
                 if settings.DEBUG_INFO : log.msg("extracting followers for %s" % new_id,level=log.INFO)
                 try:
                     self.parse_follow_page(new_id,'followers',user)
-                except:
+                except Exception as e:
                     log.msg("error extracting followers for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     self.move_to_error_queue(new_id)
+                    if str(e).find('no such session')  >= 0:
+                        log.msg("session crashed, terminating...",level=log.ERROR)
+                        return
                     continue
                 #save user locally
                 if settings.DEBUG_INFO : log.msg("saving user %s locally" % new_id,level=log.INFO)
                 try:
                     self.save_user_locally(user)
-                except:
+                except Exception as e:
                     log.msg("error saving user %s locally" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     self.move_to_error_queue(new_id)
+                    if str(e).find('no such session')  >= 0:
+                        log.msg("session crashed, terminating...",level=log.ERROR)
+                        return
                     continue
                 #push new ids to redis server
                 if settings.DEBUG_INFO : log.msg("uploading new ids for %s" % new_id,level=log.INFO)
                 try:
                     upload_list = user['followees']+user['followers']
                     self.upload_new_id_list(upload_list)
-                except:
+                except Exception as e:
                     log.msg("error uploading new ids for %s" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
                     self.move_to_error_queue(new_id)
+                    if str(e).find('no such session')  >= 0:
+                        log.msg("session crashed, terminating...",level=log.ERROR)
+                        return
                     continue
                 #move finished user from proc set to finish queue and update user record
                 if settings.DEBUG_INFO : log.msg("moving %s from proc set to finish queue" % new_id,level=log.INFO)
@@ -243,9 +270,12 @@ class PeopleSpider(Spider):
                         pipe.execute()
                     else:
                         log.msg("error removing id %s from proc set" % new_id,level=log.ERROR)
-                except:
+                except Exception as e:
                     log.msg("error moving id %s from proc set to finish queue" % new_id,level=log.ERROR)
                     log.msg(traceback.format_exc(), level=log.ERROR)
+                    if str(e).find('no such session')  >= 0:
+                        log.msg("session crashed, terminating...",level=log.ERROR)
+                        return
                     self.move_to_error_queue(new_id)
                 self.r_local.set('crawler:update_time:%s' % self.crawler_id, datetime.datetime.utcnow().strftime("%s"))
                         

@@ -2,6 +2,7 @@ from zhihu.settings import REDIS_HOST,CAPTCHA_CHECK_INTERVAL,CRAWLER_HEARTBEAT_T
 from zhihu.utils import image_from_string
 import redis
 import time
+import ast
 class Monitor(object):
     
     
@@ -12,14 +13,17 @@ class Monitor(object):
         
         
     def add_user_id(self,uid):
-    	if not self.r.sismember('id_set',uid):
+    	if self.r.sadd('id_set',uid):
     		self.r.lpush('new_id_queue',uid)
-    		self.r.sadd('id_set',uid)
+    		
             
     def add_user_ids(self,lst):
         for item in lst:
         	self.add_user_id(item)
     
+    def add_account(self,username,password):
+        self.r.sadd('account_set',(username,password).__str__())
+        
     def total_id_count(self):
         return self.r.scard('id_set')
         
@@ -36,7 +40,26 @@ class Monitor(object):
         return self.r.llen('error_id_queue')
         
     def stats(self):
+        crawler_list = self.get_crawler_list()
+        #TODO: add account stats
         pipe = self.r.pipeline()
+        print "---------------------ACCOUNT STATS---------------------"
+        account_set = self.r.sscan(name='account_set',count=10000)
+        account_set = account_set[1]
+        for crawler in crawler_list:
+            pipe.get('crawler_account:%s' % crawler[0])
+        crawling_account_list = pipe.execute()
+        for avail_account in account_set:
+            (username,password) = ast.literal_eval(avail_account)
+            print "%s (available)" % username
+        for avail_account in crawling_account_list:
+            (username,password) = ast.literal_eval(avail_account)
+            print "%s (used)" % username
+        print "---------------------CRAWLER STATS---------------------"
+        for crawler in crawler_list:
+            print "%s on %s:%s" % (crawler[0],crawler[1],crawler[2])
+        print "Total: %d" % len(crawler_list)
+        
         pipe.scard('id_set')
         pipe.llen('new_id_queue')
         pipe.scard('proc_id_set')
@@ -75,17 +98,23 @@ class Monitor(object):
             except:
                 print "cannot get heartbeat or timestamp for crawler %s on %s:%s" % (crawler[0],crawler[1],str(crawler[2]))
                 if self.r.srem('crawler_id_set',crawler[0]):
+                    account = self.r.get('crawler_account:%s' % crawler[0])
+                    if account: self.r.sadd('account_set',account)
                     print "removed crawler %s from crawler id set" % crawler[0]
                 continue
             if not heartbeat or not timestamp:
                 print "cannot get heartbeat or timestamp for crawler %s on %s:%s" % (crawler[0],crawler[1],str(crawler[2]))
                 if self.r.srem('crawler_id_set',crawler[0]):
+                    account = self.r.get('crawler_account:%s' % crawler[0])
+                    if account: self.r.sadd('account_set',account)
                     print "removed crawler %s from crawler id set" % crawler[0]
                 continue
             if timestamp - heartbeat > CRAWLER_HEARTBEAT_TIMEOUT:
                 #heartbeat timeout
                 print "heartbeat of crawler %s on %s:%s timeout" % (crawler[0],crawler[1],str(crawler[2]))
                 if self.r.srem('crawler_id_set',crawler[0]):
+                    account = self.r.get('crawler_account:%s' % crawler[0])
+                    if account: self.r.sadd('account_set',account)
                     print "removed crawler %s from crawler id set" % crawler[0]
     
     #move expired user from proc set to new queue
@@ -117,7 +146,7 @@ class Monitor(object):
         
         for i in range(len(remove_status)):
             if remove_status[i] == 1:
-                pipe.lpush('new_id_queue',remove_user_id_list[i])
+                pipe.rpush('new_id_queue',remove_user_id_list[i])
         pipe.execute()
         
         print "put expired users into new_id_queue"    
@@ -161,4 +190,33 @@ class Monitor(object):
             if crawler_id and crawler_ip:
                self.solve_captcha(crawler_id,crawler_ip,crawler_port)
     
+    def maintain_consistency(self):
+        id_set = self.r.sscan(name='id_set',count=5000000)
+        new_list = self.r.lrange('new_id_queue',0,5000000)
+        finish_list = self.r.lrange('finish_id_queue',0,5000000)
+        error_list = self.r.lrange('error_id_queue',0,5000000)
+        #remove redundancy
+        new_count = {}
+        for idd in new_list:
+            if idd in new_count:
+                new_count[idd] += 1
+            else:
+                new_count[idd] = 1
+                
+        finish_count = {}
+        for idd in finish_list:
+            if idd in finish_count:
+                finish_count[idd] += 1
+            else:
+                finish_count[idd] = 1
+                
+        error_count = {}
+        for idd in error_list:
+            if idd in error_count:
+                error_count[idd] += 1
+            else:
+                error_count[idd] = 1
+        #remove duplicate
+        #queue missing ids
+        
                 
