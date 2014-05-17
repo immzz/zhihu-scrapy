@@ -44,3 +44,21 @@ To solve captchas for all crawlers that need captcha, use:
 >> m = Monitor()
 >> m.solve_captchas()
 ```
+
+###How to add accounts?
+
+Each crawler needs an account to crawl, to add account, use the Monitor class:
+
+```
+>> from zhihu.utils import Monitor
+>> m = Monitor()
+>> m.add_account('username','password')
+```
+
+###How to check stats?
+
+```
+>> from zhihu.utils import Monitor
+>> m = Monitor()
+>> m.stats()
+```
