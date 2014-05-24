@@ -47,7 +47,7 @@ To solve captchas for all crawlers that need captcha, use:
 
 ###How to add accounts?
 
-Each crawler needs an account to crawl, to add account, use the Monitor class:
+Each crawler needs to fetch an account from the account pool to start. To add accounts to account pool, use:
 
 ```
 >> from zhihu.utils import Monitor
