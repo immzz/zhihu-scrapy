@@ -62,3 +62,7 @@ Each crawler needs to fetch an account from the account pool to start. To add ac
 >> m = Monitor()
 >> m.stats()
 ```
+
+###License: GPL v3
+
+[GPL v3 details](http://www.gnu.org/licenses/gpl-2.0.txt)
