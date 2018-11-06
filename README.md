@@ -7,7 +7,7 @@ A Scrapy Zhihu Crawler
 
 zhihu-scrapy is a distributed crawler system for crawling zhihu website.The data we gather include user profile, followees and followers.Collected data can be used for various purpose(eg. finding communities, identifying popular answer posters)
 
-###How does it work?
+### How does it work?
 
 It combines the following systems:
 
@@ -18,7 +18,7 @@ It combines the following systems:
 The crawler system consists of one main redis server to manage crawling records.
 All crawling machines start a local redis server for storing user data.
 
-###How to get started?
+### How to get started?
 
 Start redis server on main server and crawling machines.
 
@@ -34,7 +34,7 @@ In `zhihu/settings.py` set `REDIS_HOST` to the ip address of the main redis serv
 
 Use `scrapy crawl zhihu_people` to start a crawler.
 
-###How to solve captchas?
+### How to solve captchas?
 
 We provide the Monitor class to monitor crawlers, including solving captchas for them.
 To solve captchas for all crawlers that need captcha, use:
@@ -45,7 +45,7 @@ To solve captchas for all crawlers that need captcha, use:
 >> m.solve_captchas()
 ```
 
-###How to add accounts?
+### How to add accounts?
 
 Each crawler needs to fetch an account from the account pool to start. To add accounts to account pool, use:
 
@@ -55,7 +55,7 @@ Each crawler needs to fetch an account from the account pool to start. To add ac
 >> m.add_account('username','password')
 ```
 
-###How to check stats?
+### How to check stats?
 
 ```
 >> from zhihu.utils import Monitor
@@ -63,6 +63,6 @@ Each crawler needs to fetch an account from the account pool to start. To add ac
 >> m.stats()
 ```
 
-###License: GPL v3
+### License: GPL v3
 
 [GPL v3 details](http://www.gnu.org/licenses/gpl-2.0.txt)
